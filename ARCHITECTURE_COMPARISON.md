@@ -48,18 +48,27 @@ graph TD
 ```mermaid
 graph TD
     User[User] --> AppGW[Application Gateway]
+    
     subgraph ACA_Environment["Container Apps Env (Internal)"]
         Langfuse[Langfuse App]
         Worker[Worker App]
         ClickHouse[ClickHouse App]
     end
+
+    subgraph Azure_Services["Azure Managed Services"]
+        Postgres[PostgreSQL Flexible]
+        Redis[Redis Cache]
+        Blob[Storage Account]
+        NFS[Azure Files Premium]
+    end
+
     AppGW --> Langfuse
-    Langfuse --> Postgres[PostgreSQL Flexible]
-    Langfuse --> Redis[Redis Cache]
-    Langfuse --> Blob[Storage Account]
+    Langfuse --> Postgres
+    Langfuse --> Redis
+    Langfuse --> Blob
     Langfuse --> ClickHouse
     Worker --> ClickHouse
-    ClickHouse --> NFS[Azure Files Premium]
+    ClickHouse --> NFS
 ```
 
 ### 2.2 主なアーキテクチャ変更点
