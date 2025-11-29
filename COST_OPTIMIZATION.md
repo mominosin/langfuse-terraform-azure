@@ -1,6 +1,9 @@
 # Azure コスト比較レポート
 
-本レポートでは、Langfuse デプロイにおける3つの構成パターン（Upstreamデフォルト、AKS最小構成、Container Apps最小構成）を比較し、それぞれのコスト構造を詳細に分析します。
+本レポートでは、**Upstream (オリジナルの [langfuse/langfuse-terraform-azure](https://github.com/langfuse/langfuse-terraform-azure) リポジトリ)** のデフォルト構成と、本リポジトリ (Container Apps) の最適化構成を比較し、それぞれのコスト構造を詳細に分析します。
+
+> [!NOTE]
+> **前提条件**: すべてのコスト試算は **東日本リージョン (Japan East / Tokyo)** の価格（2025年11月時点）に基づいています。
 
 ## 1. 構成別コスト比較（3パターン）
 
