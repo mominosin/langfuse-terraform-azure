@@ -67,67 +67,41 @@ LangfuseはBullキューを使用しており、Redisクラスタモードでは
 
 ## コスト比較（AKS版 vs Container Apps版）
 
-ここでは、現実的な「最小構成（Minimum Viable）」同士で比較します。
-Upstream (AKS) も最適化（DDoS無効化、SKUダウンサイジング）を行った場合と、本リポジトリ（Container Apps）の比較です。
+「HA構成や冗長化を考慮せず、**最低限の料金**で動作させる」場合の比較です。
 
-### 開発環境
+### 前提条件 (Minimum Viable Config)
 
-| リソース | AKS版 | Container Apps版 | 差額 | 備考 |
-|---------|-------|-----------------|------|------|
-| **コンピュート基盤** | $30-40 (AKS 1node B2s) | - | - | Container Appsは個別課金 |
-| **Application Gateway** | $20-30 (AGIC共用) | $20-30 | ±0 | 両方必要 |
-| **Web** | (AKS内) | $5-20 | - | CPU 0.5-1.0 |
-| **Worker** | (AKS内) | $10-30 | - | CPU 1.0, 常時起動 |
-| **ClickHouse** | (AKS内) | $30-60 | - | CPU 2.0, 常時起動 |
-| **PostgreSQL** | $10-30 | $10-30 | ±0 | B_Standard_B1ms |
-| **Redis** | $40-60 | $40-60 | ±0 | Standard C1（非クラスタ必須） |
-| **Storage (Blob)** | $2-3 | $2-3 | ±0 | LRS |
-| **Storage (ClickHouse)** | $2-5 (通常File Share) | $15-25 (Premium NFS) | **+$10-20** | Container Apps要件 |
-| **Log Analytics** | $5 | $5 | ±0 | 30日保持 |
-| **Private Endpoints** | $2 | $2 | ±0 | PostgreSQL, Redis |
-| **合計** | **$100-145** | **$139-265** | **+$39-120** | |
+- **共通**: Application Gateway (Standard v1 Small想定), PostgreSQL (B1ms), Redis (Basic/Standard C0)
+- **AKS版**: ノードプールを `Standard_B2s` (2 vCPU, 4 GiB) x 1 ノードに縮小
+- **Container Apps版**: Web (Scale-to-Zero), Worker (0.5 vCPU), ClickHouse (1.0 vCPU), Premium NFS (100GB)
 
-### 本番環境
+### 開発環境（最低構成）
 
-| リソース | AKS版 | Container Apps版 | 差額 | 備考 |
-|---------|-------|-----------------|------|------|
-| **コンピュート基盤** | $200-400 (AKS 2-3node D4s) | - | - | Container Appsは個別課金 |
-| **Application Gateway** | $40-80 | $40-80 | ±0 | 両方必要 |
-| **Web** | (AKS内) | $50-100 | - | CPU 2.0, min 2 |
-| **Worker** | (AKS内) | $20-50 | - | CPU 2.0, min 2 |
-| **ClickHouse** | (AKS内) | $60-120 | - | CPU 4.0 |
-| **PostgreSQL (HA)** | $100-300 | $100-300 | ±0 | GP_Standard_D4s_v3 |
-| **Redis** | $80-150 | $80-150 | ±0 | Standard C2-C3 |
-| **Storage (Blob)** | $20 | $20 | ±0 | GRS |
-| **Storage (ClickHouse)** | $5-10 (通常File Share) | $30-50 (Premium NFS) | **+$20-40** | Container Apps要件 |
-| **Log Analytics** | $20-50 | $20-50 | ±0 | 大量ログ |
-| **Private Endpoints** | $2-4 | $2-4 | ±0 | |
-| **合計** | **$430-960** | **$433-935** | **ほぼ同等** | |
+| リソース | AKS版 (Min) | Container Apps版 (Min) | 差額 | 備考 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Compute** | **~$31**<br>(1x B2s Node) | **~$55**<br>(Worker + CH 常時起動) | +$24 | ACAの従量課金(常時起動)はVMより割高になる傾向 |
+| **Ingress** | ~$22<br>(AppGW Std v1 Small) | ~$22<br>(AppGW Std v1 Small) | ±0 | 内部VNetアクセスのため両方必要 |
+| **Storage (CH)** | ~$3<br>(Standard File Share) | **~$16**<br>(Premium NFS 100GB) | +$13 | ACAでのClickHouse安定稼働にはNFS(Premium)が必須 |
+| **Database** | ~$10<br>(PG B1ms) | ~$10<br>(PG B1ms) | ±0 | |
+| **Redis** | ~$15<br>(Basic C0) | ~$15<br>(Basic C0) | ±0 | ※Bullキュー要件でStandard推奨だがMin比較のためBasic計算 |
+| **その他** | ~$5<br>(Disk, IP) | ~$5<br>(Log Analytics) | ±0 | |
+| **合計** | **~$86 /月** | **~$123 /月** | **ACAが +$37 割高** | |
 
-### 差額の要因
+### 考察
 
-| 要因 | 差額 | 説明 |
-|-----|------|------|
-| **Premium NFS** | +$10-40/月 | Container AppsでNFSマウントに必須 |
-| **コンピュート効率** | ±0〜+$30 | AKSはノード共有で効率的、Container Appsは個別課金 |
+1.  **開発環境（常時起動）では AKS が有利**:
+    *   AKS は `Standard_B2s` ($31) 1台に全てのコンテナ（Web, Worker, ClickHouse, Redis）を詰め込むことができます。
+    *   Container Apps は、常時起動が必要なコンテナ（Worker, ClickHouse）に対して vCPU/メモリ単価で課金されるため、VM を借り切るよりも割高になります。
+    *   さらに、ACA では ClickHouse のために **Premium NFS** ($16~) が必須となり、これが固定費として上乗せされます。
 
-**共通コスト（差額なし）**:
-- Application Gateway（両方必要）
-- Redis Standard（非クラスタ必須はLangfuse要件）
-- PostgreSQL、Storage (Blob)、Log Analytics
+2.  **本番環境（スケール時）では Container Apps が有利な場合も**:
+    *   AKS はノード単位でのスケーリング（階段状のコスト増加）ですが、ACA はリクエスト数に応じた細かなスケーリングが可能です。
+    *   運用管理コスト（K8sのアップグレード、ノード管理の人件費）を含めれば、ACA の「フルマネージド」なメリットがコスト差を上回る可能性があります。
 
-### まとめ
+### 結論
 
-| 環境 | AKS版 | Container Apps版 | 主な差額要因 |
-|-----|-------|-----------------|------------|
-| 開発 | $100-145 | $139-265 | Premium NFS (+$10-20)、コンピュート効率差 |
-| 本番 | $430-960 | $433-935 | Premium NFS (+$20-40)、ほぼ相殺 |
-
-**Container Apps版のメリット**（コスト以外）:
-- Kubernetes知識不要
-- デプロイ時間短縮（10-18分 vs 20-30分）
-- Helmチャート管理不要
-- 自動スケーリング設定が簡単
+「**とにかくAzure利用料を安くしたい（開発環境）**」という観点では、**AKS（Bシリーズ 1ノード）** に分があります。
+しかし、「**運用管理の手間をゼロにしたい**」という観点では、月額 +$40 程度の差額で **Container Apps** を選ぶ価値があります。
 
 ---
 
