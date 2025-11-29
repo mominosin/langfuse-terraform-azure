@@ -68,40 +68,37 @@ LangfuseはBullキューを使用しており、Redisクラスタモードでは
 ## コスト比較（AKS版 vs Container Apps版）
 
 「HA構成や冗長化を考慮せず、**最低限の料金**で動作させる」場合の比較です。
-
-### 前提条件 (Minimum Viable Config)
-
-- **共通**: Application Gateway (Standard v1 Small想定), PostgreSQL (B1ms), Redis (Basic/Standard C0)
-- **AKS版**: ノードプールを `Standard_B2s` (2 vCPU, 4 GiB) x 1 ノードに縮小
-- **Container Apps版**: Web (Scale-to-Zero), Worker (0.5 vCPU), ClickHouse (1.0 vCPU), Premium NFS (100GB)
+過去の議論に基づき、**Application Gateway ($250)** を両方の構成で必須（外部公開用）として計上しています。
 
 ### 開発環境（最低構成）
 
 | リソース | AKS版 (Min) | Container Apps版 (Min) | 差額 | 備考 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Compute** | **~$31**<br>(1x B2s Node) | **~$55**<br>(Worker + CH 常時起動) | +$24 | ACAの従量課金(常時起動)はVMより割高になる傾向 |
-| **Ingress** | ~$22<br>(AppGW Std v1 Small) | ~$22<br>(AppGW Std v1 Small) | ±0 | 内部VNetアクセスのため両方必要 |
+| **Ingress** | **~$250**<br>(AppGW Std v2) | **~$250**<br>(AppGW Std v2) | ±0 | 外部公開には両方とも必須（固定費） |
+| **Compute** | **~$31**<br>(1x B2s Node) | **~$55**<br>(Worker + CH 常時起動) | +$24 | ACAの従量課金(常時起動)はVMより割高 |
 | **Storage (CH)** | ~$3<br>(Standard File Share) | **~$16**<br>(Premium NFS 100GB) | +$13 | ACAでのClickHouse安定稼働にはNFS(Premium)が必須 |
 | **Database** | ~$10<br>(PG B1ms) | ~$10<br>(PG B1ms) | ±0 | |
 | **Redis** | ~$15<br>(Basic C0) | ~$15<br>(Basic C0) | ±0 | ※Bullキュー要件でStandard推奨だがMin比較のためBasic計算 |
 | **その他** | ~$5<br>(Disk, IP) | ~$5<br>(Log Analytics) | ±0 | |
-| **合計** | **~$86 /月** | **~$123 /月** | **ACAが +$37 割高** | |
+| **合計** | **~$314 /月** | **~$351 /月** | **ACAが +$37 割高** | |
 
 ### 考察
 
-1.  **開発環境（常時起動）では AKS が有利**:
-    *   AKS は `Standard_B2s` ($31) 1台に全てのコンテナ（Web, Worker, ClickHouse, Redis）を詰め込むことができます。
-    *   Container Apps は、常時起動が必要なコンテナ（Worker, ClickHouse）に対して vCPU/メモリ単価で課金されるため、VM を借り切るよりも割高になります。
-    *   さらに、ACA では ClickHouse のために **Premium NFS** ($16~) が必須となり、これが固定費として上乗せされます。
+1.  **Application Gateway が支配的**:
+    *   どちらの構成でも、外部公開のために Application Gateway (Standard v2) を使用する場合、その固定費（約 $250）がコストの大半を占めます。
+    *   このため、Compute や Storage の差額（数十ドル）は、全体コストから見ると相対的に小さくなります。
 
-2.  **本番環境（スケール時）では Container Apps が有利な場合も**:
-    *   AKS はノード単位でのスケーリング（階段状のコスト増加）ですが、ACA はリクエスト数に応じた細かなスケーリングが可能です。
-    *   運用管理コスト（K8sのアップグレード、ノード管理の人件費）を含めれば、ACA の「フルマネージド」なメリットがコスト差を上回る可能性があります。
+2.  **開発環境（常時起動）では AKS がわずかに有利**:
+    *   Compute単体で見ると、AKS は `Standard_B2s` ($31) 1台に詰め込めるため安価です。
+    *   ACA は常時起動コンテナ（Worker, ClickHouse）の従量課金と、必須となる **Premium NFS** ($16~) の分だけ割高になります。
+
+3.  **本番環境（スケール時）の逆転可能性**:
+    *   本番運用でノード数が増える場合や、運用管理コスト（K8sのアップグレード、ノード管理の人件費）を含めれば、ACA の「フルマネージド」なメリットがこの差額（月額数千円程度）を上回る価値があります。
 
 ### 結論
 
 「**とにかくAzure利用料を安くしたい（開発環境）**」という観点では、**AKS（Bシリーズ 1ノード）** に分があります。
-しかし、「**運用管理の手間をゼロにしたい**」という観点では、月額 +$40 程度の差額で **Container Apps** を選ぶ価値があります。
+しかし、全体コスト（AppGW込み）で見ればその差は **約10%** 程度であり、「**運用管理の手間をゼロにしたい**」という観点では、この差額で **Container Apps** を選ぶ合理性があります。
 
 ---
 
