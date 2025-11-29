@@ -1,28 +1,79 @@
-output "cluster_name" {
-  description = "The name of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.this.name
+output "container_app_fqdn" {
+  description = "The FQDN of the Container App"
+  value       = azurerm_container_app.langfuse.ingress[0].fqdn
 }
 
-output "cluster_host" {
-  description = "The host of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.this.kube_config[0].host
+output "container_app_url" {
+  description = "The URL of the Container App"
+  value       = "https://${azurerm_container_app.langfuse.ingress[0].fqdn}"
+}
+
+output "log_analytics_workspace_id" {
+  description = "The ID of the Log Analytics Workspace"
+  value       = azurerm_log_analytics_workspace.this.id
+}
+
+output "postgres_server_name" {
+  description = "The name of the PostgreSQL server"
+  value       = azurerm_postgresql_flexible_server.this.name
+}
+
+output "postgres_server_fqdn" {
+  description = "The FQDN of the PostgreSQL server"
+  value       = azurerm_postgresql_flexible_server.this.fqdn
+}
+
+output "postgres_admin_username" {
+  description = "The administrator username of the PostgreSQL server"
+  value       = azurerm_postgresql_flexible_server.this.administrator_login
   sensitive   = true
 }
 
-output "cluster_client_certificate" {
-  description = "The client certificate for the AKS cluster"
-  value       = azurerm_kubernetes_cluster.this.kube_config[0].client_certificate
+output "postgres_admin_password" {
+  description = "The administrator password of the PostgreSQL server"
+  value       = azurerm_postgresql_flexible_server.this.administrator_password
   sensitive   = true
 }
 
-output "cluster_client_key" {
-  description = "The client key for the AKS cluster"
-  value       = azurerm_kubernetes_cluster.this.kube_config[0].client_key
+output "redis_host" {
+  description = "The hostname/IP of the Redis instance"
+  value       = local.redis_host
+}
+
+output "redis_port" {
+  description = "The port of the Redis instance"
+  value       = local.redis_port
+}
+
+output "redis_primary_key" {
+  description = "The primary access key for the Redis instance"
+  value       = local.redis_password
   sensitive   = true
 }
 
-output "cluster_ca_certificate" {
-  description = "The CA certificate for the AKS cluster"
-  value       = azurerm_kubernetes_cluster.this.kube_config[0].cluster_ca_certificate
+output "storage_account_name" {
+  description = "The name of the storage account"
+  value       = azurerm_storage_account.this.name
+}
+
+output "storage_account_key" {
+  description = "The primary access key for the storage account"
+  value       = azurerm_storage_account.this.primary_access_key
   sensitive   = true
+}
+
+output "langfuse_admin_password" {
+  description = "The initial Langfuse admin user password"
+  value       = random_password.langfuse_admin_password.result
+  sensitive   = true
+}
+
+output "app_gateway_fqdn" {
+  description = "The FQDN of the Application Gateway public IP"
+  value       = "${random_id.dns_label.hex}.${var.location}.cloudapp.azure.com"
+}
+
+output "langfuse_url" {
+  description = "The URL to access Langfuse (via Application Gateway)"
+  value       = var.domain != null ? "https://${var.domain}" : "http://${random_id.dns_label.hex}.${var.location}.cloudapp.azure.com"
 }

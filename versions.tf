@@ -6,14 +6,6 @@ terraform {
       source  = "hashicorp/azurerm"
       version = ">= 3.0.0"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = ">= 2.10"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 2.5"
-    }
     random = {
       source  = "hashicorp/random"
       version = ">= 3.0"
@@ -21,6 +13,10 @@ terraform {
     tls = {
       source  = "hashicorp/tls"
       version = ">= 3.0"
+    }
+    azapi = {
+      source  = "azure/azapi"
+      version = ">= 1.0.0"
     }
   }
 }

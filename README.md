@@ -1,259 +1,460 @@
 ![GitHub Banner](https://github.com/langfuse/langfuse-k8s/assets/2834609/2982b65d-d0bc-4954-82ff-af8da3a4fac8)
 
-# Azure Langfuse Terraform module
+# Azure Langfuse Terraform Module (Container Apps)
 
-> This module is a pre-release version and its interface may change. Please review the changelog between each release and create a GitHub issue for any problems or feature requests.
+> **Note**: This is the Container Apps version. For production deployments, this provides a simpler, more cost-effective alternative to AKS.
 
-This repository contains a Terraform module for deploying [Langfuse](https://langfuse.com/) - the open-source LLM observability platform - on Azure.
-This module aims to provide a production-ready, secure, and scalable deployment using managed services whenever possible.
+This repository contains a Terraform configuration for deploying [Langfuse](https://langfuse.com/) - the open-source LLM observability platform - on Azure using **Azure Container Apps**.
 
-## Usage
+## Features
 
-1. Set up the module with the settings that suit your needs. A minimal installation requires a `domain` which is under your control and a `resource_group_name`. Configure the kubernetes and helm providers to connect to the AKS cluster.
+- ✅ **Serverless**: Azure Container Apps with auto-scaling
+- ✅ **Full architecture**: Web + Worker + ClickHouse
+- ✅ **Fully managed**: PostgreSQL, Redis, Storage, Log Analytics
+- ✅ **Secure**: Private Endpoints for databases and cache
+- ✅ **Simple**: No Kubernetes/Helm knowledge required
+- ✅ **Fast deployment**: 10-18 minutes vs 20-30 minutes for AKS
+- ✅ **Persistent storage**: ClickHouse data persists with Premium NFS FileStorage
+
+## Architecture
+
+```
+Internet
+    ↓
+Application Gateway (HTTP/HTTPS)
+    ↓
+Container Apps Environment (Internal)
+    ├── Langfuse Web (API + UI)
+    ├── Langfuse Worker (Event Processing)
+    └── ClickHouse (Analytics DB)
+    ↓ Private Endpoints
+PostgreSQL + Redis + Storage (Blob + Premium NFS)
+```
+
+**Components**:
+- **Application Gateway**: External access to internal Container Apps
+- **Langfuse Web**: Main application (API + UI)
+- **Langfuse Worker**: Async event processor (Redis queue → ClickHouse)
+- **ClickHouse**: Analytics database (dedicated Container App with NFS)
+- **PostgreSQL**: Primary database with Private Endpoint
+- **Redis**: Queue + caching (Azure Cache for Redis Standard)
+- **Storage**: Blob storage (Azure SDK) + Premium NFS for ClickHouse
+
+## Quick Start
+
+### Prerequisites
+
+- Azure CLI installed and authenticated
+- Terraform >= 1.0
+- Azure subscription
+
+### Minimal Setup (Development/Test)
+
+Create a `main.tf`:
 
 ```hcl
-module "langfuse" {
-  source = "github.com/langfuse/langfuse-terraform-azure?ref=0.4.4"
+terraform {
+  required_version = ">= 1.0"
 
-  domain              = "langfuse.example.com"
-  location            = "westeurope"  # Optional: defaults to westeurope
-  
-  # Optional use a different name for your installation
-  # e.g. when using the module multiple times on the same Azure subscription
-  name = "langfuse"
-  
-  # Optional: Configure the Virtual Network
-  virtual_network_address_prefix = "10.224.0.0/12"
-  aks_subnet_address_prefix     = "10.224.0.0/16"
-  app_gateway_subnet_address_prefix = "10.225.0.0/16"
-  db_subnet_address_prefix      = "10.226.0.0/24"
-  redis_subnet_address_prefix   = "10.226.1.0/24"
-  storage_subnet_address_prefix = "10.226.2.0/24"
-
-  # Optional: Configure the Kubernetes cluster
-  kubernetes_version = "1.32"
-  aks_service_cidr   = "192.168.0.0/20"
-  aks_dns_service_ip = "192.168.0.10"
-  node_pool_vm_size  = "Standard_D8s_v6"
-  node_pool_min_count = 2
-  node_pool_max_count = 10
-
-  # Optional: Configure the database instances
-  postgres_instance_count = 2
-  postgres_ha_mode       = "SameZone"
-  postgres_sku_name      = "GP_Standard_D2s_v3"
-  postgres_storage_mb    = 32768
-  
-  # Optional: Configure the cache
-  redis_sku_name = "Basic"
-  redis_family   = "C"
-  redis_capacity = 1
-
-  # Optional: Configure Application Gateway
-  app_gateway_capacity = 1
-
-  # Optional: Security features
-  use_encryption_key = true
-  use_ddos_protection = true
-
-  # Optional: Configure Langfuse Helm chart version
-  langfuse_helm_chart_version = "1.5.9"
-  
-  # Optional: Add additional environment variables
-  additional_env = [
-    {
-      name  = "CUSTOM_ENV_VAR"
-      value = "custom-value"
-    },
-    {
-      name = "DATABASE_PASSWORD"
-      valueFrom = {
-        secretKeyRef = {
-          name = "my-database-secret"
-          key  = "password"
-        }
-      }
-    },
-    {
-      name = "CONFIG_VALUE"
-      valueFrom = {
-        configMapKeyRef = {
-          name = "my-config-map"
-          key  = "config-key"
-        }
-      }
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = ">= 3.0.0"
     }
-  ]
-}
-
-provider "kubernetes" {
-  host                   = module.langfuse.cluster_host
-  client_certificate     = base64decode(module.langfuse.cluster_client_certificate)
-  client_key             = base64decode(module.langfuse.cluster_client_key)
-  cluster_ca_certificate = base64decode(module.langfuse.cluster_ca_certificate)
-}
-
-provider "helm" {
-  kubernetes = {
-    host                   = module.langfuse.cluster_host
-    client_certificate     = base64decode(module.langfuse.cluster_client_certificate)
-    client_key             = base64decode(module.langfuse.cluster_client_key)
-    cluster_ca_certificate = base64decode(module.langfuse.cluster_ca_certificate)
   }
 }
+
+provider "azurerm" {
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
+}
+
+# Use the module directly
+module "naming" {
+  source  = "Azure/naming/azurerm"
+  version = "0.4.2"
+  suffix  = ["langfuse"]
+}
+
+# Include all resources from this repository
+# (Clone this repo and reference it locally, or use remote source)
 ```
 
-2. Apply the DNS zone
+**Or use it standalone** (simpler for getting started):
 
 ```bash
+# Clone the repository
+git clone https://github.com/langfuse/langfuse-terraform-azure.git
+cd langfuse-terraform-azure
+
+# Create terraform.tfvars
+cat > terraform.tfvars <<EOF
+location = "japaneast"
+name     = "langfuse-dev"
+
+# Optional: Set domain if you want custom domain
+# domain = "langfuse.example.com"
+
+# Development environment settings (cost-optimized)
+container_app_cpu          = 0.5
+container_app_memory       = 1
+container_app_min_replicas = 0  # Scale to zero
+container_app_max_replicas = 3
+
+postgres_instance_count = 1      # No HA
+postgres_sku_name      = "B_Standard_B1ms"
+postgres_storage_mb    = 32768
+
+redis_sku_name = "Balanced_B0"
+
+use_ddos_protection = false
+EOF
+
+# Deploy
 terraform init
-terraform apply --target module.langfuse.azurerm_dns_zone.this
+terraform apply
 ```
 
-3. Set up the Nameserver delegation on your DNS provider, likely using (check on your created DNS zone):
+### After Deployment
+
+Get the Container App URL:
 
 ```bash
-ns1-05.azure-dns.com.
-ns2-05.azure-dns.net.
-ns3-05.azure-dns.org.
-ns4-05.azure-dns.info.
+terraform output container_app_url
 ```
 
-4. Apply the full stack:
+Access Langfuse:
+```
+https://<container-app-fqdn>
+```
+
+If you didn't set a domain, you'll get a default Container Apps URL like:
+```
+https://langfuse.xxxxx.japaneast.azurecontainerapps.io
+```
+
+### Initial Admin User
+
+Langfuse automatically creates an initial admin user on first deployment:
+
+- **Email**: `admin@example.com` (configurable via `LANGFUSE_INIT_USER_EMAIL`)
+- **Name**: `Admin User` (configurable via `LANGFUSE_INIT_USER_NAME`)
+- **Password**: Randomly generated 32-character password
+
+To retrieve the admin password:
+
+```bash
+# View the password (stored in Terraform state)
+terraform output -raw langfuse_admin_password
+```
+
+> **Note**: For production deployments, change the default email address by setting `LANGFUSE_INIT_USER_EMAIL` in the `additional_env` variable, or change the password immediately after first login.
+
+## Configuration Options
+
+### Required Variables
+
+| Name | Description | Default |
+|------|-------------|---------|
+| `location` | Azure region | `"westeurope"` |
+
+### Optional Variables
+
+#### Basic Settings
+
+| Name | Description | Default |
+|------|-------------|---------|
+| `name` | Resource name prefix | `"langfuse"` |
+| `domain` | Custom domain (optional) | `null` |
+
+#### Container Apps
+
+| Name | Description | Default |
+|------|-------------|---------|
+| `container_app_cpu` | CPU cores | `1.0` |
+| `container_app_memory` | Memory in Gi | `2` |
+| `container_app_min_replicas` | Min replicas | `1` |
+| `container_app_max_replicas` | Max replicas | `10` |
+| `langfuse_image_tag` | Docker image tag | `"3"` |
+
+#### Database
+
+| Name | Description | Default |
+|------|-------------|---------|
+| `postgres_instance_count` | Number of instances (1=no HA, 2=HA) | `2` |
+| `postgres_sku_name` | PostgreSQL SKU | `"GP_Standard_D2s_v3"` |
+| `postgres_storage_mb` | Storage in MB | `32768` |
+
+#### Cache
+
+| Name | Description | Default |
+|------|-------------|---------|
+| `redis_sku_name` | Azure Managed Redis SKU | `"Balanced_B0"` |
+
+#### Security
+
+| Name | Description | Default |
+|------|-------------|---------|
+| `use_encryption_key` | Use encryption key | `true` |
+| `use_ddos_protection` | Use DDoS protection | `true` |
+
+## Cost Estimates
+
+### Development Environment
+
+```hcl
+# terraform.tfvars
+location = "japaneast"
+name     = "langfuse-dev"
+
+# Web Container App
+container_app_cpu          = 0.5
+container_app_memory       = 1
+container_app_min_replicas = 0  # Scale to zero
+container_app_max_replicas = 3
+
+# Worker Container App (always on)
+worker_cpu          = 1.0
+worker_memory       = 2
+worker_min_replicas = 1
+worker_max_replicas = 1
+
+postgres_instance_count = 1  # No HA
+postgres_sku_name      = "B_Standard_B1ms"
+postgres_storage_mb    = 32768
+
+# Azure Cache for Redis (Standard, non-clustered for Bull queues)
+redis_sku_name = "Standard"
+redis_family   = "C"
+redis_capacity = 1
+
+use_ddos_protection = false
+```
+
+**Monthly cost**: $139-265
+
+**Architecture components**:
+- ✅ Application Gateway (internal Container Apps access)
+- ✅ Container Apps: Web + Worker + ClickHouse
+- ✅ Azure Cache for Redis Standard (non-clustered for Bull queues)
+- ✅ Premium NFS FileStorage for ClickHouse persistence
+- ✅ Private Endpoints for PostgreSQL and Redis
+
+See [COST_OPTIMIZATION.md](./COST_OPTIMIZATION.md) for cost reduction options (down to $75-140/month with Dragonfly).
+
+### Production Environment
+
+```hcl
+# terraform.tfvars
+location = "japaneast"
+name     = "langfuse-prod"
+
+container_app_cpu          = 2.0
+container_app_memory       = 4
+container_app_min_replicas = 2
+container_app_max_replicas = 20
+
+worker_cpu          = 2.0
+worker_memory       = 4
+worker_min_replicas = 2
+worker_max_replicas = 10
+
+postgres_instance_count = 2  # HA enabled
+postgres_sku_name      = "GP_Standard_D4s_v3"
+postgres_storage_mb    = 131072
+
+redis_sku_name = "Standard"
+redis_family   = "C"
+redis_capacity = 2
+
+use_ddos_protection = false
+```
+
+**Monthly cost**: $433-935
+
+**Note**: Production deployments may need NAT Gateway (+$30), DNS Zone (+$0.50), and Key Vault (+$0.03) depending on requirements.
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| `container_app_fqdn` | Container App FQDN |
+| `container_app_url` | Container App URL (with https) |
+| `log_analytics_workspace_id` | Log Analytics Workspace ID |
+| `postgres_server_name` | PostgreSQL server name |
+| `redis_host` | Redis hostname |
+| `storage_account_name` | Storage account name |
+
+## Custom Domain Setup (Optional)
+
+If you want to use a custom domain:
+
+1. Set the `domain` variable in `terraform.tfvars`:
+   ```hcl
+   domain = "langfuse.example.com"
+   ```
+
+2. After deployment, configure your DNS:
+   - Point your domain to the Container App FQDN (CNAME record)
+   - Or use the output `container_app_fqdn` value
+
+3. Add custom domain in Azure Portal:
+   - Navigate to Container App → Custom domains
+   - Add your domain and certificate
+
+## Network Configuration
+
+Default network settings:
+
+| Subnet | CIDR | Purpose |
+|--------|------|---------|
+| Container Apps | `10.224.0.0/23` | Container Apps infrastructure |
+| Database | `10.226.0.0/24` | PostgreSQL |
+
+All resources are deployed in the same region for zero data transfer costs.
+
+## Monitoring
+
+Access logs via:
+
+```bash
+az containerapp logs show \
+  --name langfuse \
+  --resource-group <resource-group-name> \
+  --follow
+```
+
+Or use Log Analytics in Azure Portal.
+
+## Upgrading Langfuse
+
+Update the image tag:
+
+```hcl
+langfuse_image_tag = "3.x.x"
+```
+
+Then apply:
 
 ```bash
 terraform apply
 ```
 
-## Architecture
+## Security Considerations
 
-The module creates a complete Langfuse stack with the following Azure components:
+### Development/Test Environment
+- ✅ Private Endpoints for PostgreSQL and Redis
+- ⚠️ Public access to Storage (with firewall rules)
+- ⚠️ No custom domain/SSL (uses Container Apps managed certificate)
 
-- Resource Group for all resources
-- Virtual Network with dedicated subnets for:
-  - AKS cluster
-  - Application Gateway
-  - PostgreSQL database
-  - Redis cache
-  - Storage account
-- Azure Kubernetes Service (AKS) cluster with:
-  - System node pool
-  - User node pool
-  - Managed identities
-  - Network security groups
-- Azure Database for PostgreSQL Flexible Server with:
-  - High availability configuration
-  - Private endpoint
-  - Network security rules
-- Azure Cache for Redis with:
-  - Private endpoint
-  - Network security rules
-- Azure Storage Account with:
-  - Blob storage
-  - Private endpoint
-  - Network security rules
-- Azure DNS Zone and Key Vault for TLS certificates
-- Azure Application Gateway for ingress with:
-  - Web Application Firewall (WAF)
-  - SSL termination
-  - Private endpoint
-- Azure Files CSI Driver for persistent storage
-- Optional DDoS Protection Plan
-- Optional encryption key for LLM API credentials
+### Production Environment Recommendations
+- ✅ All Private Endpoints
+- ✅ Custom domain with managed certificate
+- ✅ DDoS Protection
+- ✅ PostgreSQL HA enabled
+- ✅ Redis Standard tier or higher
 
-## Requirements
+## Troubleshooting
 
-| Name       | Version |
-|------------|---------|
-| terraform  | >= 1.0  |
-| azurerm    | >= 3.0  |
-| kubernetes | >= 2.10 |
-| helm       | >= 2.5  |
+### Container App won't start
 
-## Providers
+Check logs:
+```bash
+az containerapp logs show --name langfuse --resource-group <rg-name>
+```
 
-| Name       | Version |
-|------------|---------|
-| azurerm    | >= 3.0  |
-| kubernetes | >= 2.10 |
-| helm       | >= 2.5  |
-| random     | >= 3.0  |
-| tls        | >= 3.0  |
+### Database connection errors
 
-## Resources
+Verify Private Endpoint:
+```bash
+az network private-endpoint list --resource-group <rg-name> --output table
+```
 
-| Name                                    | Type     |
-|-----------------------------------------|----------|
-| azurerm_kubernetes_cluster.this         | resource |
-| azurerm_postgresql_flexible_server.this | resource |
-| azurerm_redis_cache.this                | resource |
-| azurerm_storage_account.this            | resource |
-| azurerm_key_vault_certificate.this      | resource |
-| azurerm_dns_zone.this                   | resource |
-| azurerm_user_assigned_identity.aks      | resource |
-| azurerm_network_security_group.this     | resource |
-| azurerm_application_gateway.this        | resource |
-| azurerm_private_endpoint.this           | resource |
-| azurerm_ddos_protection_plan.this       | resource |
+### High costs
 
-## Inputs
+Check actual usage:
+```bash
+az consumption usage list --start-date 2025-11-01 --end-date 2025-11-30
+```
 
-| Name                              | Description                                   | Type   | Default              | Required |
-|-----------------------------------|-----------------------------------------------|--------|----------------------|:--------:|
-| name                              | Name prefix for resources                     | string | "langfuse"           |    no    |
-| domain                            | Domain name used for resource naming          | string | n/a                  |   yes    |
-| location                          | Azure region to deploy resources              | string | "westeurope"         |    no    |
-| virtual_network_address_prefix    | VNET address prefix                           | string | "10.224.0.0/12"      |    no    |
-| aks_subnet_address_prefix         | AKS subnet address prefix                     | string | "10.224.0.0/16"      |    no    |
-| app_gateway_subnet_address_prefix | Application Gateway subnet address prefix     | string | "10.225.0.0/16"      |    no    |
-| db_subnet_address_prefix          | Database subnet address prefix                | string | "10.226.0.0/24"      |    no    |
-| redis_subnet_address_prefix       | Redis subnet address prefix                   | string | "10.226.1.0/24"      |    no    |
-| storage_subnet_address_prefix     | Storage subnet address prefix                 | string | "10.226.2.0/24"      |    no    |
-| kubernetes_version                | Kubernetes version for AKS cluster            | string | "1.32"               |    no    |
-| aks_service_cidr                  | Network range used by Kubernetes service      | string | "192.168.0.0/20"     |    no    |
-| aks_dns_service_ip                | IP address for cluster service discovery      | string | "192.168.0.10"       |    no    |
-| use_encryption_key                | Whether to use encryption key for credentials | bool   | true                 |    no    |
-| node_pool_vm_size                 | VM size for AKS node pool                     | string | "Standard_D2s_v6"    |    no    |
-| node_pool_min_count               | Minimum number of nodes in AKS node pool      | number | 2                    |    no    |
-| node_pool_max_count               | Maximum number of nodes in AKS node pool      | number | 10                   |    no    |
-| postgres_instance_count           | Number of PostgreSQL instances                | number | 2                    |    no    |
-| postgres_ha_mode                  | HA mode for PostgreSQL                        | string | "SameZone"           |    no    |
-| postgres_sku_name                 | SKU name for PostgreSQL                       | string | "GP_Standard_D2s_v3" |    no    |
-| postgres_storage_mb               | Storage size in MB for PostgreSQL             | number | 32768                |    no    |
-| redis_sku_name                    | SKU name for Redis                            | string | "Basic"              |    no    |
-| redis_family                      | Cache family for Redis                        | string | "C"                  |    no    |
-| redis_capacity                    | Capacity of Redis                             | number | 1                    |    no    |
-| app_gateway_capacity              | Capacity for Application Gateway              | number | 1                    |    no    |
-| use_ddos_protection               | Whether to use DDoS protection                | bool   | true                 |    no    |
-| langfuse_helm_chart_version       | Version of the Langfuse Helm chart to deploy  | string | "1.5.9"              |    no    |
-| additional_env                    | Additional environment variables for Langfuse | list   | []                   |    no    |
+## Documentation
 
-## Outputs
+- [Setup Guide](./SETUP_GUIDE.md) - Step-by-step from Azure account creation
+- [Architecture & Cost Comparison](./ARCHITECTURE_COMPARISON.md) - Detailed comparison with Upstream (AKS)
+- [Cost Optimization Guide](./COST_OPTIMIZATION.md) - Ways to reduce costs
 
-| Name                       | Description                                         |
-|----------------------------|-----------------------------------------------------|
-| cluster_name               | The name of the AKS cluster                         |
-| cluster_host               | The host of the AKS cluster                         |
-| cluster_client_certificate | The client certificate for the AKS cluster          |
-| cluster_client_key         | The client key for the AKS cluster                  |
-| cluster_ca_certificate     | The CA certificate for the AKS cluster              |
-| postgres_server_name       | The name of the PostgreSQL server                   |
-| postgres_server_fqdn       | The FQDN of the PostgreSQL server                   |
-| postgres_admin_username    | The administrator username of the PostgreSQL server |
-| postgres_admin_password    | The administrator password of the PostgreSQL server |
-| redis_host                 | The hostname of the Redis instance                  |
-| redis_ssl_port             | The SSL port of the Redis instance                  |
-| redis_primary_key          | The primary access key for the Redis instance       |
-| storage_account_name       | The name of the storage account                     |
-| storage_account_key        | The primary access key for the storage account      |
-| dns_name_servers           | The name servers for the DNS zone                   |
+## Comparison: Container Apps vs AKS
+
+See [ARCHITECTURE_COMPARISON.md](./ARCHITECTURE_COMPARISON.md) for a detailed breakdown.
+
+Both versions run **Langfuse** with Web + Worker + ClickHouse architecture.
+
+| Feature | Container Apps (Current) | AKS |
+|---------|-------------------------|-----|
+| **Deployment Time** | 10-18 min | 20-30 min |
+| **Cost (Dev)** | $139-265/mo* | $100-145/mo |
+| **Cost (Prod)** | $433-935/mo | $430-960/mo |
+| **Complexity** | Low | High |
+| **Kubernetes Knowledge** | Not required | Required |
+| **Auto-scaling** | Built-in | Manual setup |
+| **Monitoring** | Built-in | Manual setup |
+
+\* Container Apps版は Application Gateway、Premium NFS、非クラスタRedis が必要なためやや高コスト。Dragonfly使用で $75-140/mo まで削減可能 (see [COST_OPTIMIZATION.md](./COST_OPTIMIZATION.md))
+
+**Note**: 本番環境コストはほぼ同等。Container Apps版は運用がシンプル（Kubernetes知識不要）なのがメリット。
 
 ## Support
 
 - [Langfuse Documentation](https://langfuse.com/docs)
 - [Langfuse GitHub](https://github.com/langfuse/langfuse)
 - [Join Langfuse Discord](https://langfuse.com/discord)
+- [Report Issues](https://github.com/langfuse/langfuse-terraform-azure/issues)
 
 ## License
 
-MIT Licensed. See LICENSE for full details.
+MIT License - See LICENSE for details
+
+## Contributing
+
+Contributions are welcome! Please open an issue or PR.
+
+## Changelog
+
+### v3.0.0 - Full Langfuse Architecture (2025-11-29)
+- **Breaking**: Full Langfuse support with Web + Worker + ClickHouse architecture
+- Added dedicated Worker Container App for async event processing
+- Changed ClickHouse from sidecar to dedicated Container App
+- Added Application Gateway for internal Container Apps access
+- Changed Redis from Azure Managed Redis to Azure Cache for Redis Standard (non-clustered for Bull queues)
+- Changed ClickHouse storage to Premium NFS FileStorage (required for Container Apps)
+- Added `LANGFUSE_USE_AZURE_BLOB=true` for native Azure Blob Storage support
+- Development environment cost: $139-265/mo (vs AKS $100-145/mo)
+- See [COST_OPTIMIZATION.md](./COST_OPTIMIZATION.md) for cost reduction to $75-140/mo
+
+### v2.2.0 - ClickHouse Persistent Storage & Admin User (2025-11-16)
+- Added persistent storage for ClickHouse data using Azure File Share (50GB)
+- ClickHouse data now persists across container restarts
+- Added automatic initial admin user creation with configurable credentials
+- Added LANGFUSE_INIT_USER_* environment variables for headless setup
+- Development environment cost: $41-77/mo (+$2/mo for File Share)
+
+### v2.1.0 - Development Environment Optimization (2025-11-15)
+- Removed NAT Gateway for cost reduction
+- Removed DNS Zone (using Container Apps default domain)
+- Removed Key Vault (no custom domain)
+- Removed Storage Private Endpoint
+- Changed Storage to LRS (from GRS)
+- Development environment cost: $39-75/mo (25-50% reduction from initial Container Apps version)
+
+### v2.0.0 - Container Apps Migration (2025-11-13)
+- Migrated from AKS to Azure Container Apps
+- Removed Kubernetes/Helm dependencies
+- Simplified architecture
+- 25-50% cost reduction vs AKS
+- Faster deployment times (10-18 min vs 20-30 min)
+
+### v0.4.4 - Last AKS version
+- AKS-based deployment (deprecated)

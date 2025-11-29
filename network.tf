@@ -21,23 +21,59 @@ resource "azurerm_network_ddos_protection_plan" "this" {
   resource_group_name = azurerm_resource_group.this.name
 }
 
-# Add non-zonal NAT Gateway
-resource "azurerm_public_ip" "nat_gateway" {
-  name                = "${module.naming.public_ip.name}-nat-gw"
+# Container Apps subnet
+resource "azurerm_subnet" "container_apps" {
+  name                 = "${module.naming.subnet.name}-container-apps"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = [var.container_apps_subnet_address_prefix]
+
+  # Service endpoints for Storage Account access
+  service_endpoints = ["Microsoft.Storage"]
+
+  # Delegation required for Container Apps VNet integration
+  # Delegation required for Container Apps VNet integration
+  # delegation {
+  #   name = "container-apps"
+  #   service_delegation {
+  #     name    = "Microsoft.App/environments"
+  #     actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+  #   }
+  # }
+}
+
+# Private Endpoint subnet (for PostgreSQL and Redis)
+resource "azurerm_subnet" "private_endpoints" {
+  name                 = "${module.naming.subnet.name}-private-endpoints"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = [var.private_endpoints_subnet_address_prefix]
+}
+
+# Application Gateway subnet
+resource "azurerm_subnet" "appgw" {
+  name                 = "snet-${var.name}-appgw"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = ["10.224.3.0/24"]
+}
+
+# Random ID for unique DNS label
+resource "random_id" "dns_label" {
+  byte_length = 4
+  prefix      = "${var.name}-"
+}
+
+# Public IP for Application Gateway
+resource "azurerm_public_ip" "appgw" {
+  name                = "pip-${var.name}-appgw"
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
   allocation_method   = "Static"
   sku                 = "Standard"
-}
+  domain_name_label   = random_id.dns_label.hex
 
-resource "azurerm_nat_gateway" "this" {
-  name                = module.naming.nat_gateway.name
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  sku_name            = "Standard"
-}
-
-resource "azurerm_nat_gateway_public_ip_association" "this" {
-  nat_gateway_id       = azurerm_nat_gateway.this.id
-  public_ip_address_id = azurerm_public_ip.nat_gateway.id
+  tags = {
+    application = local.tag_name
+  }
 }
