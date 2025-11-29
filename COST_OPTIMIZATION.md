@@ -49,7 +49,26 @@ LangfuseはBullキューを使用しており、Redisクラスタモードでは
 
 ---
 
+## (参考) Upstreamのデフォルト構成コスト
+
+もし Upstream (AKS) リポジトリを **デフォルト設定**（`terraform.tfvars` による最適化なし）でデプロイした場合、コストは非常に高額になります。これが「コスト最適化」の出発点です。
+
+| リソース | デフォルト設定 | 月額概算コスト |
+| :--- | :--- | :--- |
+| **DDoS Protection** | 有効 (`true`) | **~$3,000** |
+| **AKS Nodes** | Standard_D8s_v6 (x2) | **~$800** |
+| **PostgreSQL** | General Purpose (HA) | ~$280 |
+| **合計** | | **~$4,450+** |
+
+> [!CAUTION]
+> **注意**: Upstreamのデフォルト設定のままデプロイすると、月額 70万円近い請求が発生する可能性があります。本リポジトリでは、DDoS保護の無効化やSKUの適正化により、これを大幅に削減しています。
+
+---
+
 ## コスト比較（AKS版 vs Container Apps版）
+
+ここでは、現実的な「最小構成（Minimum Viable）」同士で比較します。
+Upstream (AKS) も最適化（DDoS無効化、SKUダウンサイジング）を行った場合と、本リポジトリ（Container Apps）の比較です。
 
 ### 開発環境
 
