@@ -1,76 +1,68 @@
 # Azure コスト比較レポート
 
-本レポートでは、Upstream (AKS) のデフォルト構成と、本リポジトリ (Container Apps) の最適化構成を比較し、さらに開発環境における最小コスト構成を分析します。
+本レポートでは、Langfuse デプロイにおける3つの構成パターン（Upstreamデフォルト、AKS最小構成、Container Apps最小構成）を比較し、それぞれのコスト構造を詳細に分析します。
 
-## 1. サマリー：劇的なコスト削減
+## 1. 構成別コスト比較（3パターン）
 
-Upstream (AKS) をデフォルトでデプロイした場合と、本リポジトリの推奨構成（開発用）の比較です。
-
-| 構成 | 月額概算 (Japan East) | 備考 |
-| :--- | :--- | :--- |
-| **Upstream (AKS) デフォルト** | **~$4,450 / 月** (約67万円) | DDoS保護有効、ハイスペックVM (D8s_v6 x2) |
-| **本リポジトリ (ACA) 開発版** | **~$351 / 月** (約5.3万円) | DDoS無効、最小リソース、App Gateway込み |
-| **削減率** | **約 92% 削減** | |
-
-> [!IMPORTANT]
-> **DDoS Protection の警告**: Upstream のデフォルト設定 (`use_ddos_protection = true`) は、それだけで **月額約 $3,000** かかります。本リポジトリではデフォルトで `false` に設定しています。
-
----
-
-## 2. 詳細比較：Upstreamデフォルト vs 本リポジトリ
-
-なぜこれほどの差が出るのか、主要リソースごとの内訳です。
-
-| リソースカテゴリ | Upstream (AKS) デフォルト | 本リポジトリ (ACA) 開発版 | コストへの影響 |
+| 項目 | ① Upstream (AKS) デフォルト | ② AKS 最小構成 (Min) | ③ Container Apps 最小構成 (Min) |
 | :--- | :--- | :--- | :--- |
-| **DDoS 保護** | **有効 (~$3,000)** | **無効 ($0)** | 最大の削減要因です。 |
-| **コンピューティング** | ノード: 2x `Standard_D8s_v6`<br>(8 vCPU, 32GB RAM)<br>**コスト: ~$1,200/月** | Web: Scale-to-Zero<br>Worker/CH: 最小vCPU (常時起動)<br>**コスト: ~$55/月** | AKSのデフォルトノードは開発用には過剰です。ACAは必要な分だけリソースを割り当てます。 |
-| **データベース** | PostgreSQL (HA有効)<br>SKU: `GP_Standard_D2s_v3`<br>**コスト: ~$280/月** | PostgreSQL (HA無効)<br>SKU: `B_Standard_B1ms`<br>**コスト: ~$10/月** | 開発環境向けにSKUを最適化しました。 |
-| **イングレス** | Application Gateway (v2)<br>**コスト: ~$250/月** | Application Gateway (v2)<br>**コスト: ~$250/月** | 外部公開のため、両方の構成で固定費としてかかります。 |
+| **月額概算** | **~$4,450** (約67万円) | **~$313** (約4.7万円) | **~$351** (約5.3万円) |
+| **特徴** | ハイスペック・DDoS保護あり | 徹底的なコスト削減 (Bシリーズ) | サーバーレス・運用管理レス |
+| **Compute** | Nodes: D8s_v6 x 2 | Node: B2s x 1 | Web: 0, Worker/CH: Min |
+| **Ingress** | App Gateway v2 | App Gateway v2 | App Gateway v2 |
+| **DB / Redis** | HA構成 / Standard | 最小構成 / Basic | 最小構成 / Basic |
+| **DDoS保護** | **有効 (+$3,000)** | 無効 | 無効 |
 
 ---
 
-## 3. 開発環境における「最小構成」の比較
+## 2. 詳細コスト内訳（何にいくらかかるのか）
 
-「もし AKS も限界までスペックを落としたら、ACA とどちらが安いのか？」
-HA構成や冗長化を考慮しない、**Minimum Viable Configuration** 同士の比較です。
+各構成におけるリソースごとのコスト内訳です。
 
-### 前提条件
-*   **共通**: App Gateway ($250), PostgreSQL B1ms ($10), Redis Basic ($15)
-*   **AKS (Min)**: `Standard_B2s` (2 vCPU, 4GB) x 1 ノード
-*   **ACA (Min)**: Worker (0.5 vCPU), ClickHouse (1.0 vCPU) 常時起動 + Premium NFS
+### ① Upstream (AKS) デフォルト構成
+**合計: ~$4,450 / 月**
+*   **DDoS Protection**: **$3,000** (支配的コスト)
+*   **Compute (AKS Nodes)**: **$1,200** (Standard_D8s_v6 x 2台)
+*   **Database (PostgreSQL)**: **$280** (General Purpose, HA有効)
+*   **Ingress (App Gateway)**: **$250** (Standard v2)
+*   **Redis**: **$16** (Basic C1)
 
-### コスト内訳表
+### ② AKS 最小構成 (Min)
+**合計: ~$313 / 月**
+*   **Ingress (App Gateway)**: **$250.00** (固定費・削減不可)
+*   **Compute (AKS Node)**: **$30.37** (Standard_B2s x 1台)
+*   **Redis**: **$15.00** (Basic C0)
+*   **Database (PostgreSQL)**: **$10.00** (B_Standard_B1ms)
+*   **Storage**: **$2.50** (Standard File Share)
+*   **その他**: **$5.00** (Disk, IP等)
 
-| リソース | AKS版 (Min) | Container Apps版 (Min) | 差額 | 備考 |
-| :--- | :--- | :--- | :--- | :--- |
-| **Ingress** | **$250.00** | **$250.00** | ±0 | 固定費 (App Gateway Standard v2) |
-| **Compute** | **$30.37**<br>(B2s Node x1) | **$55.00**<br>(Worker+CH 従量課金) | +$24.63 | ACAの常時起動はVM借り切りより割高 |
-| **Storage (CH)** | **$2.50**<br>(Standard File) | **$16.20**<br>(Premium NFS 100GB) | +$13.70 | ACAでのClickHouseにはPremium NFSが必須 |
-| **Database** | $10.00 | $10.00 | ±0 | PostgreSQL B1ms |
-| **Redis** | $15.00 | $15.00 | ±0 | Basic C0 |
-| **その他** | $5.00 | $5.00 | ±0 | Disk, Log Analytics |
-| **合計** | **~$313 /月** | **~$351 /月** | **ACAが +$38** | |
-
-### 結論
-純粋なインフラコストでは **AKS (Min) の方が月額 $38 安い** です。
-しかし、本リポジトリでは **「月額 $38 で Kubernetes の運用管理（アップグレード、ノード管理）を不要にする」** という判断で Container Apps を採用しています。
+### ③ Container Apps 最小構成 (Min) - 本リポジトリ推奨
+**合計: ~$351 / 月**
+*   **Ingress (App Gateway)**: **$250.00** (固定費・削減不可)
+*   **Compute (Container Apps)**: **$55.00**
+    *   Web: $0 (Scale-to-Zero)
+    *   Worker: ~$25 (0.5 vCPU 常時起動)
+    *   ClickHouse: ~$30 (1.0 vCPU 常時起動)
+*   **Storage (ClickHouse)**: **$16.20** (Premium NFS 100GB - 必須)
+*   **Redis**: **$15.00** (Basic C0)
+*   **Database (PostgreSQL)**: **$10.00** (B_Standard_B1ms)
+*   **その他**: **$5.00** (Log Analytics等)
 
 ---
 
-## 4. さらなるコスト削減ガイド (ACA版)
+## 3. さらなるコスト削減ガイド (ACA版)
 
 Container Apps 版のコスト (~$351) をさらに下げるためのオプションです。
 
 ### 🚀 A. Redis を Dragonfly に変更 (推奨)
-Azure Cache for Redis ($15~$40) を、Container Apps 上の Dragonfly コンテナ ($5) に置き換えます。
-*   **削減額**: -$10 〜 -$35 / 月
+Azure Cache for Redis ($15) を、Container Apps 上の Dragonfly コンテナ ($5) に置き換えます。
+*   **削減額**: -$10 / 月
 *   **適用**: `dragonfly.tf` を作成し、Redis リソースを削除。
 
 ### 📉 B. ClickHouse リソースの縮小
 開発環境に限り、ClickHouse の CPU/メモリを削減します。
 *   **設定**: `cpu = 0.5`, `memory = "1Gi"`
-*   **削減額**: -$20 〜 -$30 / 月
+*   **削減額**: -$20 / 月
 
 ### 🛑 C. 不要リソースの削除
 *   **Private Endpoint**: Public Access + Firewall に変更 (-$2)
@@ -86,3 +78,12 @@ Azure Cache for Redis ($15~$40) を、Container Apps 上の Dragonfly コンテ�
 
 > [!TIP]
 > **Application Gateway について**: 開発環境でセキュリティ（WAF）や固定IPが不要であれば、Application Gateway を削除して Container Apps のパブリックエンドポイントを使用することで、**一気に $250 削減** できます（合計 ~$65〜$100）。ただし、セキュリティリスクについては十分検討してください。
+
+---
+
+## 4. サマリー
+
+*   **Upstreamデフォルト**は月額 $4,000 超と非常に高額なため、そのまま利用するのは非推奨です。
+*   **最小構成**で比較すると、インフラコスト単体では **AKS ($313)** が最安です。
+*   **Container Apps ($351)** は月額 +$38 程度高くなりますが、Kubernetes の運用管理（アップグレード、ノード管理）が不要になるメリットがあります。
+*   本リポジトリでは、この「運用コスト削減」を重視し、**Container Apps** を採用しています。
