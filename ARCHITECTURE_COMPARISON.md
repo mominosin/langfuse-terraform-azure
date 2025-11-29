@@ -34,10 +34,11 @@ AKS から Container Apps に切り替えることで、実用最小限の本番
 graph TD
     User[User] --> AppGW[Application Gateway]
     AppGW --> AGIC[AGIC Controller]
-    AGIC --> AKS[AKS Cluster]
-    subgraph AKS
+    AGIC --> AKS_Cluster[AKS Cluster]
+    subgraph AKS_Environment
         Langfuse[Langfuse Pods]
     end
+    AKS_Cluster -.-> Langfuse
     Langfuse --> Postgres[PostgreSQL Flexible]
     Langfuse --> Redis[Redis Cache]
     Langfuse --> Blob[Storage Account]
@@ -47,12 +48,12 @@ graph TD
 ```mermaid
 graph TD
     User[User] --> AppGW[Application Gateway]
-    AppGW --> ACAEnv[Container Apps Env (Internal)]
-    subgraph ACAEnv
+    subgraph ACA_Environment[Container Apps Env (Internal)]
         Langfuse[Langfuse App]
         Worker[Worker App]
         ClickHouse[ClickHouse App]
     end
+    AppGW --> Langfuse
     Langfuse --> Postgres[PostgreSQL Flexible]
     Langfuse --> Redis[Redis Cache]
     Langfuse --> Blob[Storage Account]
