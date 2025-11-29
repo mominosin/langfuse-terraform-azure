@@ -52,32 +52,23 @@
 
 ## 3. さらなるコスト削減ガイド (ACA版)
 
-Container Apps 版のコスト (~$351) をさらに下げるためのオプションです。
+Container Apps 版のコスト (~$351) を、運用の手間を増やさずに下げるための設定例です。
 
-### 🚀 A. Redis を Dragonfly に変更 (推奨)
-Azure Cache for Redis ($15) を、Container Apps 上の Dragonfly コンテナ ($5) に置き換えます。
-*   **削減額**: -$10 / 月
-*   **適用**: `dragonfly.tf` を作成し、Redis リソースを削除。
-
-### 📉 B. ClickHouse リソースの縮小
+### 📉 A. ClickHouse リソースの縮小
 開発環境に限り、ClickHouse の CPU/メモリを削減します。
 *   **設定**: `cpu = 0.5`, `memory = "1Gi"`
-*   **削減額**: -$20 / 月
+*   **削減額**: -$20 〜 -$30 / 月
 
-### 🛑 C. 不要リソースの削除
-*   **Private Endpoint**: Public Access + Firewall に変更 (-$2)
-*   **Log Analytics**: 保持期間を 7日に短縮 (微減)
+### 🛑 B. 不要リソースの削除
+*   **Private Endpoint**: 開発環境でVNet内閉域が不要な場合、Public Access + Firewall に変更 (-$2)
+*   **Log Analytics**: 保持期間を 30日 → 7日に短縮 (微減)
 
 ### 最適化後の到達可能コスト
 
 | 構成 | App Gateway | Compute/DB/Storage | 合計 |
 | :--- | :--- | :--- | :--- |
 | **標準 (ACA Min)** | $250 | ~$101 | **~$351** |
-| **最適化後 (Dragonfly等)** | $250 | ~$65 | **~$315** |
-| **(参考) AppGWなし** | $0 | ~$65 | **~$65** |
-
-> [!TIP]
-> **Application Gateway について**: 開発環境でセキュリティ（WAF）や固定IPが不要であれば、Application Gateway を削除して Container Apps のパブリックエンドポイントを使用することで、**一気に $250 削減** できます（合計 ~$65〜$100）。ただし、セキュリティリスクについては十分検討してください。
+| **最適化後** | $250 | ~$70 | **~$320** |
 
 ---
 
