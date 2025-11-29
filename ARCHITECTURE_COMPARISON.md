@@ -48,7 +48,7 @@ graph TD
 ```mermaid
 graph TD
     User[User] --> AppGW[Application Gateway]
-    subgraph ACA_Environment[Container Apps Env (Internal)]
+    subgraph ACA_Environment["Container Apps Env (Internal)"]
         Langfuse[Langfuse App]
         Worker[Worker App]
         ClickHouse[ClickHouse App]
